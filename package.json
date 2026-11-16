@@ -12,11 +12,13 @@
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "node --import tsx --test tests/*.test.ts",
+    "test:live": "npm run build && node --env-file-if-exists=.env scripts/smoke-live.mjs",
     "export:contracts": "node scripts/export-contracts.mjs",
     "import:knowledge": "node scripts/import-knowledge.mjs",
     "check": "npm run check:env && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.92",
     "@hono/node-server": "2.1.8",
     "ai": "7.0.173",
     "hono": "4.13.18",
@@ -31,6 +33,9 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.2"
   },
-  "engines": { "node": ">=22.22.2 <23", "npm": ">=10.9.7 <11" },
+  "engines": {
+    "node": ">=22.22.2 <23",
+    "npm": ">=10.9.7 <11"
+  },
   "packageManager": "npm@10.9.7"
 }

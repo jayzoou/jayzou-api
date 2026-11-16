@@ -50,6 +50,10 @@ test('health and origin policy are explicit', async () => {
 })
 test('configuration rejects unsupported modes and invalid ports', () => {
   assert.throws(() => readConfig({ AI_MODE: 'live' }))
+  assert.equal(readConfig({ AI_MODE: 'live', BAILIAN_API_KEY: 'test-key' }).BAILIAN_MODEL, 'qwen-plus')
+  assert.throws(() => readConfig({ AI_MODE: 'unknown' }))
+  assert.throws(() => readConfig({ AI_MODE: 'live', BAILIAN_API_KEY: ' ' }))
+  assert.throws(() => readConfig({ BAILIAN_BASE_URL: 'file:///tmp/model' }))
   assert.throws(() => readConfig({ PORT: '0' }))
   assert.throws(() => readConfig({ ALLOWED_ORIGINS: 'not-a-url' }))
   assert.throws(() => readConfig({ NODE_ENV: 'unsupported' }))

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createUIMessageStreamResponse, type UIMessageChunk } from 'ai'
+import type { UIMessageChunk } from 'ai'
 import { articleSource, searchArticles } from './knowledge.js'
 import { debounceDemo } from './demo.js'
 import { insightSchema } from './contracts.js'
@@ -8,33 +8,7 @@ import type { Knowledge, Profile, Section } from './contracts.js'
 
 export interface MockContext { knowledge: Knowledge; profile: Profile; delayMs: number }
 
-export function eventResponse(events: AsyncGenerator<UIMessageChunk>, requestSignal: AbortSignal) {
-  const controller = new AbortController()
-  const abort = () => { controller.abort(); void events.return(undefined) }
-  requestSignal.addEventListener('abort', abort, { once: true })
-  const stream = new ReadableStream<UIMessageChunk>({
-    async pull(output) {
-      try {
-        if (controller.signal.aborted) return
-        if (requestSignal.aborted) { output.close(); return }
-        const next = await events.next()
-        if (controller.signal.aborted) return
-        if (requestSignal.aborted) { output.close(); return }
-        if (next.done) { requestSignal.removeEventListener('abort', abort); output.close() }
-        else output.enqueue(next.value)
-      } catch (error) {
-        requestSignal.removeEventListener('abort', abort)
-        if (!requestSignal.aborted && !controller.signal.aborted) {
-          console.error('Mock stream failed', error)
-          output.enqueue({ type: 'error', errorText: '回复中断，请重试。' })
-        }
-        if (!controller.signal.aborted) output.close()
-      }
-    },
-    cancel() { requestSignal.removeEventListener('abort', abort); abort() },
-  })
-  return createUIMessageStreamResponse({ stream, headers: { 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no', 'X-Portfolio-Contract': '1' } })
-}
+export { eventResponse } from './stream.js'
 
 async function* textEvents(text: string, delayMs: number, signal: AbortSignal): AsyncGenerator<UIMessageChunk> {
   const id = randomUUID()
