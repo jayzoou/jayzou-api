@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { contactSchema } from './contracts.js'
 import { chatEvents, eventResponse, insightEvents, type MockContext } from './mock.js'
 import { articleSource, searchArticles } from './knowledge.js'
-import type { Config } from './config.js'
+import { isAllowedOrigin, type OriginConfig } from './origins.js'
 
 const textPart = z.object({ type: z.literal('text'), text: z.string().max(8000) })
 const chatRequest = z.object({
@@ -21,16 +21,16 @@ async function jsonBody(request: Request): Promise<unknown> {
   try { return await request.json() } catch { throw new HTTPException(400, { message: '请求不是有效 JSON。' }) }
 }
 
-export function createApp(context: MockContext, config: Pick<Config, 'ALLOWED_ORIGINS'>) {
+export function createApp(context: MockContext, config: OriginConfig) {
   const app = new Hono<{ Variables: { requestId: string } }>()
   app.use('*', async (c, next) => {
     c.set('requestId', randomUUID())
     c.header('X-Request-Id', c.get('requestId'))
     const origin = c.req.header('Origin')
-    if (origin && !config.ALLOWED_ORIGINS.includes(origin)) return c.json({ error: { code: 'ORIGIN_DENIED', message: '来源未被允许。', requestId: c.get('requestId') } }, 403)
+    if (origin && !isAllowedOrigin(origin, config)) return c.json({ error: { code: 'ORIGIN_DENIED', message: '来源未被允许。', requestId: c.get('requestId') } }, 403)
     await next()
   })
-  app.use('*', cors({ origin: origin => config.ALLOWED_ORIGINS.includes(origin) ? origin : undefined, allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type', 'Idempotency-Key'], exposeHeaders: ['X-Request-Id', 'X-Portfolio-Contract'] }))
+  app.use('*', cors({ origin: origin => isAllowedOrigin(origin, config) ? origin : undefined, allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type', 'Idempotency-Key'], exposeHeaders: ['X-Request-Id', 'X-Portfolio-Contract'] }))
   app.use('/api/*', bodyLimit({ maxSize: 128 * 1024, onError: c => c.json({ error: { code: 'BODY_TOO_LARGE', message: '请求内容过大。', requestId: c.get('requestId') } }, 413) }))
   app.get('/health', c => c.json({ status: 'ok', mode: 'mock', contractVersion: '1', knowledgeVersion: context.knowledge.version, articleCount: context.knowledge.articles.length }))
   app.get('/api/articles', c => {

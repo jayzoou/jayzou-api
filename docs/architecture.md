@@ -2,6 +2,8 @@
 
 前端静态博客与本仓库独立部署，开发时由 Vite 代理 `/api`。生产前端通过 `VITE_API_BASE_URL` 指向本服务；后端 `ALLOWED_ORIGINS` 设置实际前端来源。
 
+来源校验与 CORS 共用 `origins.ts`。development 模式允许精确的 localhost、IPv4/IPv6 回环主机使用任意 HTTP/HTTPS 端口，适应 Vite 自动换端口；production/test 仅匹配配置白名单。代理保留浏览器 Origin，不通过剥离或伪造 Origin 绕过后端校验。
+
 所有聊天响应使用 AI SDK UI Message Stream（SSE、协议 v1），由 SDK 负责编码与客户端解析。文本采用 start/delta/end，工具采用 input/output，文章导读采用 data-progress/data-insight。工具结果是经过限定的数据，不能提供任意组件、HTML、模块导入或文件路径。
 
 服务目前只有 Mock 实现：规则选择工具，关键词匹配真实正文，导读取原文摘录，Demo 使用仓库预设文件，联系表单不投递。不存在模型推理、语义检索或真实生成代码。轻量上下文关联仅把“继续/刚才”等问句关联到上一条用户问题。

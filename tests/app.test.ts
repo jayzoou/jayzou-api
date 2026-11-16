@@ -52,6 +52,36 @@ test('configuration rejects unsupported modes and invalid ports', () => {
   assert.throws(() => readConfig({ AI_MODE: 'live' }))
   assert.throws(() => readConfig({ PORT: '0' }))
   assert.throws(() => readConfig({ ALLOWED_ORIGINS: 'not-a-url' }))
+  assert.throws(() => readConfig({ NODE_ENV: 'unsupported' }))
+})
+test('development accepts changing loopback ports for POST and CORS preflight', async () => {
+  for (const origin of ['http://localhost:5002', 'http://127.0.0.1:5012', 'http://[::1]:5003']) {
+    const response = await app.request('/api/chat', json({ messages: messages('你好') }, { Origin: origin }))
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('access-control-allow-origin'), origin)
+    assert.match(response.headers.get('content-type') || '', /text\/event-stream/)
+    assert.match(await response.text(), /data: \[DONE\]/)
+    const preflight = await app.request('/api/chat', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers.get('access-control-allow-origin'), origin)
+  }
+})
+test('development rejects lookalike domains, opaque origins and URLs with credentials or paths', async () => {
+  for (const origin of ['http://localhost.evil.example:5002', 'http://127.0.0.1.evil.example', 'null', 'http://user@localhost:5002', 'http://localhost:5002/path', 'http://localhost:5002?query=1']) {
+    const response = await app.request('/api/chat', json({ messages: messages('你好') }, { Origin: origin }))
+    assert.equal(response.status, 403, origin)
+  }
+})
+test('production and test only accept the configured origin allowlist', async () => {
+  for (const mode of ['production', 'test']) {
+    const restricted = createApp({ profile, knowledge, delayMs: 0 }, readConfig({ NODE_ENV: mode, ALLOWED_ORIGINS: 'https://jayzou.me' }))
+    for (const origin of ['http://localhost:5002', 'http://127.0.0.1:5002', 'http://[::1]:5002', 'https://untrusted.example']) {
+      assert.equal((await restricted.request('/health', { headers: { Origin: origin } })).status, 403)
+    }
+    const response = await restricted.request('/health', { headers: { Origin: 'https://jayzou.me' } })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://jayzou.me')
+  }
 })
 test('invalid JSON, media types, requests and oversized bodies fail before streaming', async () => {
   assert.equal((await app.request('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status, 400)

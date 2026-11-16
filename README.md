@@ -18,6 +18,10 @@ npm run dev
 
 默认监听 `http://127.0.0.1:8787`，健康检查为 `/health`。可复制 `.env.example` 为 `.env` 调整端口、允许来源、文件路径和模拟分块间隔。`data/profile.json` 只填写愿意公开的信息，初始履历为空，不包含虚构工作或教育经历。
 
+默认 `NODE_ENV=development`，允许 `localhost`、`127.0.0.1` 和 `[::1]` 的 HTTP/HTTPS 来源使用任意端口，以兼容 Vite 从 5000 自动切换到 5002 等端口。域名后缀、账号信息和路径不会被当成本机来源。`NODE_ENV=production` 或 `test` 时仅允许 `ALLOWED_ORIGINS` 中的精确来源；部署时须显式设置 `NODE_ENV=production` 和站点白名单。
+
+前端默认通过 Vite 代理请求 `/api/chat`，浏览器显示 `http://localhost:5002/api/chat` 是正常的；该请求由 Vite 转发到 8787。若返回 `ORIGIN_DENIED`，检查来源策略和 `NODE_ENV`，无需为每次开发端口变化修改前端 API 地址。`.env not found` 仅表示使用默认配置，不影响服务启动。
+
 生产运行：`npm run build` 后执行 `npm start`。数据库、真实模型、身份认证、持久化限流和通知投递尚未接入，不能把当前 Mock 服务作为真实 AI 服务交付。会话由前端标签页保存；联系表单仅模拟提交，幂等记录仅在本进程保存 5 分钟。
 
 ## 接口
