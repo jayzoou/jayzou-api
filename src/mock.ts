@@ -28,22 +28,35 @@ function* toolEvents(name: string, input: unknown, output: unknown): Generator<U
   yield { type: 'tool-output-available', toolCallId, output }
 }
 
+function resumeSection(question: string): Section | undefined {
+  if (/文章|博客|站内|联系|留言|offer|招聘|demo|防抖|沙盒|写.*组件|运行.*代码/i.test(question)) return undefined
+  if (/教育|学历|毕业|大学|本科|专业/.test(question)) return 'education'
+  if (/项目|采购|商城|迁移|动态表单|权限|租户|LCP|首屏|性能优化/i.test(question)) return 'projects'
+  if (/技能|技术栈|擅长|Kubernetes|运维/i.test(question)) return 'skills'
+  if (/经历|履历|工作经验|工作几年|多少年|上一份工作|公司|带.*人|管理.*人|团队|直属/.test(question)) return 'experience'
+  if (/简历|介绍.*你|介绍.*Jay|你是谁|候选人|求职|薪资|到岗|GitHub|邮箱/i.test(question)) return 'overview'
+  return undefined
+}
+
 export async function* chatEvents(query: string, context: MockContext, signal: AbortSignal, previousQuery = ''): AsyncGenerator<UIMessageChunk> {
   yield { type: 'start', messageId: randomUUID(), messageMetadata: { simulated: true, contractVersion: '1' } }
   yield { type: 'start-step' }
   const question = /继续|刚才|这篇|它的/.test(query) ? `${previousQuery} ${query}` : query
+  const section = resumeSection(question)
   if (/^(你好|您好|hello|hi)[！!。,.，\s]*$/i.test(question)) {
     yield* textEvents('你好，我是 Jay 的数字助手。你可以询问公开简历、查找站内文章，或让我展示一个 React 防抖 Demo。当前为演示模式。', context.delayMs, signal)
-  } else if (/联系|留言|offer|招聘|邮箱/i.test(question)) {
+  } else if (section) {
+    const content = section === 'overview'
+      ? [context.profile.name, ...context.profile.links.map(link => `${link.label}：${link.url}`)]
+      : context.profile[section]
+    yield* textEvents(context.profile.intro + '\n\n' + (content.length ? content.join('\n\n') : '简历中未提及该部分信息，尚未填写。'), context.delayMs, signal)
+    yield* toolEvents('showResumeSection', { section }, { section, profile: context.profile, simulated: true })
+  } else if (/联系|留言|offer|招聘/i.test(question)) {
     yield* textEvents('可以在下面留下联系信息。目前为演示模式，提交不会发送通知。', context.delayMs, signal)
     yield* toolEvents('sendOfferOrMessage', {}, { title: '联系 Jay', simulated: true })
   } else if (/demo|防抖|沙盒|写.*组件|运行.*代码/i.test(question)) {
     yield* textEvents('这是预设的 React 防抖示例。打开面板后可编辑代码，再点击运行预览。', context.delayMs, signal)
     yield* toolEvents('openInteractiveDemo', { topic: question }, debounceDemo)
-  } else if (/简历|履历|经历|技能|技术栈|教育|项目|介绍.*你|介绍.*Jay/i.test(question)) {
-    const section: Section = /技能|技术栈/.test(question) ? 'skills' : /教育/.test(question) ? 'education' : /项目/.test(question) ? 'projects' : /经历|履历/.test(question) ? 'experience' : 'overview'
-    yield* textEvents(context.profile.intro + '\n\n以下内容来自公开资料。尚未填写的经历会显示为空，演示回复不会补写履历。', context.delayMs, signal)
-    yield* toolEvents('showResumeSection', { section }, { section, profile: context.profile, simulated: true })
   } else {
     const generic = /^(有哪些博客|推荐文章|看看博客|博客文章)[？?！!。\s]*$/.test(question)
     const found = generic ? context.knowledge.articles.slice(0, 5).map(article => articleSource(article)) : searchArticles(context.knowledge, question)

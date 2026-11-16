@@ -7,6 +7,7 @@ import { createApp } from '../src/app.js'
 import { readConfig } from '../src/config.js'
 import { insightSchema, type Knowledge, type PortfolioMessage, type Profile } from '../src/contracts.js'
 import { eventResponse } from '../src/mock.js'
+import { loadProfile } from '../src/knowledge.js'
 
 const profile: Profile = { name: 'Test author', intro: '仅测试数据', skills: [], experience: [], education: [], projects: [], links: [] }
 const knowledge: Knowledge = {
@@ -21,11 +22,11 @@ const app = createApp({ profile, knowledge, delayMs: 0 }, config)
 const json = (data: unknown, headers: Record<string, string> = {}): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data) })
 const messages = (query: string): PortfolioMessage[] => [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: query }] }]
 
-async function reply(query: string, api = '/api/chat', body: Record<string, string> = {}) {
+async function reply(query: string, api = '/api/chat', body: Record<string, string> = {}, targetApp = app) {
   const transport = new DefaultChatTransport<PortfolioMessage>({
     api: `http://local${api}`, body,
     fetch: async (input, init) => {
-      const response = await app.request(input, init)
+      const response = await targetApp.request(input, init)
       if (!response.body) return response
       // Split at every byte, including inside UTF-8 and SSE framing.
       return new Response(response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
@@ -117,6 +118,45 @@ test('missing resume fields stay empty; demo and contact only return UI data', a
   assert.deepEqual(resume.output.profile.skills, [])
   assert.ok((await reply('写一个防抖组件')).parts.some(part => part.type === 'tool-openInteractiveDemo' && part.state === 'output-available'))
   assert.ok((await reply('如何联系你')).parts.some(part => part.type === 'tool-sendOfferOrMessage' && part.state === 'output-available'))
+})
+test('configured fictional resume answers section questions through the chat stream', async () => {
+  const fixture = await loadProfile(new URL('../data/profile.json', import.meta.url).pathname)
+  const resumeApp = createApp({ profile: fixture, knowledge, delayMs: 0 }, config)
+  const cases = [
+    ['查看简历', 'overview', '十年前端开发经验'],
+    ['有多少年工作经验，管理过多少人？', 'experience', '管理 6 人前端团队'],
+    ['上一份工作是否有直属下属？', 'experience', '本人没有直属下属'],
+    ['毕业于哪所大学？', 'education', '南京信息工程大学'],
+    ['你的技术栈是什么？', 'skills', 'TanStack Query'],
+    ['是否有 Kubernetes 运维经验？', 'skills', '没有独立负责大型后端系统或 Kubernetes 集群运维'],
+    ['商城首屏优化效果和测试条件是什么？', 'projects', '模拟 4G 网络'],
+    ['Vue 3 迁移全部完成了吗？', 'projects', '整体迁移尚未完成'],
+    ['GitHub 地址是什么？', 'overview', '简历未提供 GitHub 地址'],
+    ['邮箱是什么？', 'overview', 'zhangchen@example.com'],
+  ] as const
+  for (const [question, section, expected] of cases) {
+    const result = await reply(question, '/api/chat', {}, resumeApp)
+    const text = result.parts.filter(part => part.type === 'text').map(part => part.text).join('')
+    assert.ok(text.includes(expected), question)
+    assert.match(text, /虚构测试简历/)
+    const tool = result.parts.find(part => part.type === 'tool-showResumeSection')
+    assert.ok(tool?.type === 'tool-showResumeSection' && tool.state === 'output-available')
+    assert.equal(tool.output.section, section)
+    assert.deepEqual(tool.output.profile, fixture)
+    assert.equal(tool.output.simulated, true)
+    assert.ok(!result.parts.some(part => part.type === 'tool-sendOfferOrMessage'))
+  }
+})
+test('resume keywords preserve explicit article, demo and contact intents', async () => {
+  for (const [question, type] of [
+    ['推荐关于闭包性能优化的文章', 'tool-recommendArticles'],
+    ['写一个演示项目的防抖组件', 'tool-openInteractiveDemo'],
+    ['联系你讨论项目合作', 'tool-sendOfferOrMessage'],
+  ] as const) {
+    const result = await reply(question)
+    assert.ok(result.parts.some(part => part.type === type), question)
+    assert.ok(!result.parts.some(part => part.type === 'tool-showResumeSection'))
+  }
 })
 test('insights use the requested published body, version and validated final object', async () => {
   const message = await reply('生成导读', '/api/articles/insights', { articlePath: '/posts/test/example' })

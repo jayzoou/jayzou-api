@@ -6,6 +6,7 @@ import { readConfig } from '../src/config.js'
 import { boundHistory, createLiveService, type ChatTurn } from '../src/llm.js'
 import type { PortfolioMessage } from '../src/contracts.js'
 import type { MockContext } from '../src/mock.js'
+import { loadProfile } from '../src/knowledge.js'
 
 const context: MockContext = {
   delayMs: 0,
@@ -84,6 +85,26 @@ test('model tool loops stop after two tool steps and one final answer', async ()
   const part = result.parts.find(part => part.type === 'tool-showResumeSection')
   assert.ok(part?.type === 'tool-showResumeSection' && part.state === 'output-available')
   assert.deepEqual(part.output.profile.experience, [])
+})
+
+test('live resume tool uses the configured fictional profile and preserves its disclosure', async () => {
+  const profile = await loadProfile(new URL('../data/profile.json', import.meta.url).pathname)
+  const resumeContext = { ...context, profile }
+  let calls = 0
+  const service = createLiveService(resumeContext, config, async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { messages: { role: string; content: unknown }[] }
+    const system = body.messages.find(message => message.role === 'system')
+    assert.ok(system && typeof system.content === 'string')
+    assert.ok(system.content.includes(JSON.stringify(profile)))
+    assert.match(system.content, /不得将候选人的履历归于 Jay/)
+    if (++calls === 1) return sse(chunk({ tool_calls: [{ index: 0, id: 'resume-1', type: 'function', function: { name: 'showResumeSection', arguments: '{"section":"projects"}' } }] }), chunk({}, 'tool_calls'))
+    return sse(chunk({ content: '以下是张晨的虚构测试简历，Vue 3 迁移尚未全部完成。' }), chunk({}, 'stop'))
+  })
+  const result = await readReply(createApp(resumeContext, config, service), [message('Vue 3 迁移完成了吗？')])
+  const part = result.parts.find(part => part.type === 'tool-showResumeSection')
+  assert.ok(part?.type === 'tool-showResumeSection' && part.state === 'output-available')
+  assert.deepEqual(part.output.profile, profile)
+  assert.equal(part.output.simulated, false)
 })
 
 test('live insights validate generated content and keep provenance on the server', async () => {
